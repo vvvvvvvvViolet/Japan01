@@ -161,7 +161,11 @@
     },
     loadJSON(SETTINGS_KEY, {})
   );
-  if (!settings.groupsByLang) settings.groupsByLang = defaultGroupsByLang();
+  // เผื่อผู้ใช้เดิมมี settings ที่บันทึกไว้ก่อนเพิ่มภาษาใหม่ (เช่น katakana) ซึ่งจะไม่มีคีย์
+  // ของภาษานั้นใน groupsByLang อยู่ - ต้องเติมค่า default ให้ทุกภาษาที่รู้จัก ไม่ใช่แค่กรณี
+  // groupsByLang หายไปทั้งก้อน มิฉะนั้นการสลับไปภาษาที่ขาดคีย์จะทำให้ค่า groupState เป็น
+  // undefined และแอปพลิเคชันพังกลางคันตอนสลับภาษา
+  settings.groupsByLang = Object.assign({}, defaultGroupsByLang(), settings.groupsByLang || {});
   let stats = loadJSON(STATS_KEY, { attempts: 0, correct: 0, streak: 0, totalStars: 0, perChar: {} });
   if (typeof stats.totalStars !== "number") stats.totalStars = 0;
 

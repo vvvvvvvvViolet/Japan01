@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>ฝึกเขียนตัวอักษร | Hiragana · Chinese · English Writing Practice</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1><span id="langGlyph">ひらがな</span> <span id="langSubtitle">ฝึกเขียนฮิรางานะ</span></h1>
+      <button id="settingsBtn" class="icon-btn" title="ตั้งค่า" aria-label="ตั้งค่า">⚙️</button>
+    </header>
+
+    <section class="stats-bar" id="statsBar">
+      <div class="stat"><span class="stat-value" id="statAttempts">0</span><span class="stat-label">ครั้ง</span></div>
+      <div class="stat"><span class="stat-value" id="statStars">0 ⭐</span><span class="stat-label">ดาวสะสม</span></div>
+      <div class="stat"><span class="stat-value" id="statStreak">0</span><span class="stat-label">ถูกติดต่อกัน</span></div>
+    </section>
+
+    <main class="practice-area">
+      <div class="prompt-card">
+        <div class="prompt-label" id="promptLabel">เขียนตัวอักษรที่อ่านว่า</div>
+        <div class="prompt-romaji" id="promptRomaji">a</div>
+        <button id="speakBtn" class="icon-btn small" title="ฟังเสียง" aria-label="ฟังเสียง">🔊</button>
+        <button id="refreshBtn" class="icon-btn small" title="สุ่มคำใหม่" aria-label="สุ่มคำใหม่">🔄</button>
+      </div>
+
+      <button id="watchBtn" class="btn watch-btn" hidden>👀 ดูวิธีเขียน</button>
+
+      <div class="canvas-wrap">
+        <canvas id="guideCanvas" width="320" height="320" aria-hidden="true"></canvas>
+        <canvas id="drawCanvas" width="320" height="320"></canvas>
+        <canvas id="overlayCanvas" width="320" height="320" aria-hidden="true"></canvas>
+        <canvas id="strokeAnimCanvas" width="320" height="320" aria-hidden="true"></canvas>
+      </div>
+
+      <div class="toolbar">
+        <button id="undoBtn" class="btn">↩️ ย้อนกลับ</button>
+        <button id="clearBtn" class="btn">🗑️ ล้าง</button>
+        <button id="checkBtn" class="btn primary">✔️ ตรวจคำตอบ</button>
+        <button id="nextBtn" class="btn" disabled>ถัดไป ➡️</button>
+      </div>
+
+      <div class="result-panel" id="resultPanel" hidden>
+        <div class="result-headline" id="resultHeadline"></div>
+        <div class="result-stars" id="resultStars"></div>
+        <div class="result-score" id="resultScore"></div>
+        <div class="result-answer" id="resultAnswer"></div>
+      </div>
+    </main>
+  </div>
+
+  <div class="settings-overlay" id="settingsOverlay" hidden>
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h2>ตั้งค่า</h2>
+        <button id="closeSettingsBtn" class="icon-btn" aria-label="ปิด">✖️</button>
+      </div>
+
+      <div class="settings-group">
+        <label class="checkbox-row" style="justify-content: space-between">
+          <span>🧒 โหมดเด็ก (ตัวใหญ่ ให้กำลังใจด้วยดาว ซ่อนตัวเลือกขั้นสูง)</span>
+          <input type="checkbox" id="kidsMode" checked />
+        </label>
+      </div>
+
+      <div class="settings-group">
+        <h3>ภาษา</h3>
+        <label class="checkbox-row" style="justify-content: space-between">
+          <select id="langSelect" class="lang-select">
+            <option value="hiragana">ฮิรางานะ (日本語)</option>
+            <option value="katakana">คาตาคานะ (日本語)</option>
+            <option value="chinese">จีนพื้นฐาน (中文)</option>
+            <option value="english">อังกฤษพื้นฐาน (English)</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="settings-group">
+        <h3>กลุ่มตัวอักษร</h3>
+        <div id="groupCheckboxContainer"></div>
+      </div>
+
+      <div class="settings-group">
+        <h3>ปากกา</h3>
+        <label class="range-row">ขนาดเส้น
+          <input type="range" id="penSize" min="4" max="20" value="10" />
+        </label>
+        <label class="checkbox-row"><input type="checkbox" id="showGuide" checked /> แสดงเส้นไกด์</label>
+        <label class="checkbox-row"><input type="checkbox" id="traceMode" checked /> โหมดลอกเงา (แสดงเงาให้ลากตาม)</label>
+        <label class="checkbox-row"><input type="checkbox" id="soundOn" checked /> 🔊 เปิดเสียงให้กำลังใจ</label>
+      </div>
+
+      <div class="settings-group">
+        <h3>ความคืบหน้า</h3>
+        <p id="progressSummary" class="muted"></p>
+        <button id="resetStatsBtn" class="btn danger">ล้างสถิติทั้งหมด</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="kana-data.js"></script>
+  <script src="katakana-data.js"></script>
+  <script src="chinese-data.js"></script>
+  <script src="english-data.js"></script>
+  <script src="stroke-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

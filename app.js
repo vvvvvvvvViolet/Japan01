@@ -34,7 +34,7 @@
         { key: "numbers", label: "ตัวเลข 1-10" },
         { key: "basic", label: "อักษรพื้นฐาน" },
         { key: "words", label: "คำศัพท์พื้นฐาน 2 ตัวอักษร" },
-        { key: "hsk5", label: "คำศัพท์ระดับ HSK5 (~90 คำ)" },
+        { key: "hsk5", label: "คำศัพท์ระดับ HSK5 (~90 คำ)", advanced: true },
       ],
       font: `"PingFang SC","Noto Sans SC","Microsoft YaHei","Heiti SC","Noto Sans CJK JP",sans-serif`,
       ttsLang: "zh-CN",
@@ -53,6 +53,7 @@
           label: "คำศัพท์ TOEIC ~600 (~80 คำ)",
           promptLabel: "เขียนคำศัพท์ภาษาอังกฤษที่แปลว่า",
           answerVerb: "แปลว่า",
+          advanced: true,
         },
       ],
       font: `"Segoe UI","Arial","Helvetica",sans-serif`,
@@ -87,24 +88,30 @@
   const guideCanvas = document.getElementById("guideCanvas");
   const drawCanvas = document.getElementById("drawCanvas");
   const overlayCanvas = document.getElementById("overlayCanvas");
+  const strokeAnimCanvas = document.getElementById("strokeAnimCanvas");
+  const watchBtn = document.getElementById("watchBtn");
   const undoBtn = document.getElementById("undoBtn");
   const clearBtn = document.getElementById("clearBtn");
   const checkBtn = document.getElementById("checkBtn");
   const nextBtn = document.getElementById("nextBtn");
   const resultPanel = document.getElementById("resultPanel");
   const resultHeadline = document.getElementById("resultHeadline");
+  const resultStars = document.getElementById("resultStars");
   const resultScore = document.getElementById("resultScore");
   const resultAnswer = document.getElementById("resultAnswer");
   const statAttempts = document.getElementById("statAttempts");
-  const statAccuracy = document.getElementById("statAccuracy");
+  const statStars = document.getElementById("statStars");
   const statStreak = document.getElementById("statStreak");
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsOverlay = document.getElementById("settingsOverlay");
   const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+  const kidsModeInput = document.getElementById("kidsMode");
   const langSelect = document.getElementById("langSelect");
   const groupCheckboxContainer = document.getElementById("groupCheckboxContainer");
   const penSizeInput = document.getElementById("penSize");
   const showGuideInput = document.getElementById("showGuide");
+  const traceModeInput = document.getElementById("traceMode");
+  const soundOnInput = document.getElementById("soundOn");
   const resetStatsBtn = document.getElementById("resetStatsBtn");
   const progressSummary = document.getElementById("progressSummary");
 
@@ -126,11 +133,20 @@
   }
 
   let settings = Object.assign(
-    { lang: "hiragana", groupsByLang: defaultGroupsByLang(), penSize: 10, showGuide: true },
+    {
+      lang: "hiragana",
+      groupsByLang: defaultGroupsByLang(),
+      penSize: 10,
+      showGuide: true,
+      kidsMode: true,
+      traceMode: true,
+      soundOn: true,
+    },
     loadJSON(SETTINGS_KEY, {})
   );
   if (!settings.groupsByLang) settings.groupsByLang = defaultGroupsByLang();
-  let stats = loadJSON(STATS_KEY, { attempts: 0, correct: 0, streak: 0, perChar: {} });
+  let stats = loadJSON(STATS_KEY, { attempts: 0, correct: 0, streak: 0, totalStars: 0, perChar: {} });
+  if (typeof stats.totalStars !== "number") stats.totalStars = 0;
 
   function persistSettings() { saveJSON(SETTINGS_KEY, settings); }
   function persistStats() { saveJSON(STATS_KEY, stats); }
@@ -152,6 +168,7 @@
   const guideCtx = setupCanvas(guideCanvas);
   const drawCtx = setupCanvas(drawCanvas);
   const overlayCtx = setupCanvas(overlayCanvas);
+  const strokeAnimCtx = setupCanvas(strokeAnimCanvas);
 
   function drawGuide() {
     guideCtx.clearRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
@@ -398,11 +415,11 @@
     return { score: Math.min(score, 100), empty: false, refCanvas: exactRef.canvas, coverage, precision };
   }
 
-  function showOverlay(refCanvas) {
+  function showOverlay(refCanvas, alpha = 0.32) {
     overlayCtx.save();
     overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    overlayCtx.globalAlpha = 0.32;
+    overlayCtx.globalAlpha = alpha;
     overlayCtx.drawImage(refCanvas, 0, 0);
     overlayCtx.restore();
   }
@@ -412,6 +429,71 @@
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     overlayCtx.restore();
   }
+
+  function showTraceGhost() {
+    clearOverlay();
+    if (!settings.traceMode || !currentItem) return;
+    const { canvas } = renderReferenceMask(currentItem.char, drawCanvas.width, drawCanvas.height, currentLang().font, 0, 90);
+    showOverlay(canvas, 0.2);
+  }
+
+  // ---------- Sound effects (Web Audio API, no external assets) ----------
+  let audioCtx = null;
+  function getAudioCtx() {
+    if (!settings.soundOn) return null;
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      audioCtx = new Ctx();
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    return audioCtx;
+  }
+
+  function playTone(freq, startTime, duration, gainPeak = 0.18) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(gainPeak, startTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.02);
+  }
+
+  function playStarsSound(stars) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notesByStars = {
+      3: [523.25, 659.25, 783.99, 1046.5], // C5 E5 G5 C6 - cheerful arpeggio
+      2: [523.25, 659.25, 783.99],
+      1: [523.25, 659.25],
+    };
+    const notes = notesByStars[stars] || [392, 349.23]; // gentle descending "try again" cue
+    notes.forEach((freq, i) => playTone(freq, now + i * 0.12, 0.28));
+  }
+
+  // ---------- Encouragement copy & star rating ----------
+  function scoreToStars(score) {
+    if (score >= 85) return 3;
+    if (score >= 70) return 2;
+    if (score >= PASS_SCORE) return 1;
+    return 0;
+  }
+  function starsHtml(stars) {
+    return "★★★".slice(0, stars) + "☆☆☆".slice(0, 3 - stars);
+  }
+  const TRY_AGAIN_MESSAGES = [
+    "เกือบแล้ว! ลองดูตัวอย่างแล้วลองใหม่นะ 💪",
+    "ดีขึ้นแน่นอน! ลองอีกครั้งนะ 🌟",
+    "ไม่เป็นไร ลองดูเงาตัวอย่างแล้วเขียนตามนะ 😊",
+  ];
 
   // ---------- Check / Next flow ----------
   function checkAnswer() {
@@ -425,26 +507,30 @@
     stats.attempts++;
 
     const passed = !result.empty && result.score >= PASS_SCORE;
+    const stars = result.empty ? 0 : scoreToStars(result.score);
     if (passed) {
       stats.perChar[charKey].correct++;
       stats.correct++;
       stats.streak++;
+      stats.totalStars += stars;
     } else {
       stats.streak = 0;
     }
     persistStats();
     updateStatsBar();
 
-    showOverlay(result.refCanvas);
+    showOverlay(result.refCanvas, 0.32);
+    playStarsSound(stars);
 
     resultPanel.hidden = false;
     resultPanel.className = "result-panel " + (passed ? "correct" : "incorrect");
     resultHeadline.textContent = result.empty
-      ? "ยังไม่ได้เขียนตัวอักษร"
+      ? "ยังไม่ได้เขียนตัวอักษรเลยนะ ลองเขียนดูก่อน"
       : passed
-      ? "ถูกต้อง! 🎉"
-      : "ยังไม่ตรงนัก ลองดูตัวอย่างด้านล่าง";
-    resultScore.textContent = result.empty ? "" : `ความแม่นยำ ${result.score}%`;
+      ? "เก่งมาก! ถูกต้อง 🎉"
+      : TRY_AGAIN_MESSAGES[Math.floor(Math.random() * TRY_AGAIN_MESSAGES.length)];
+    resultStars.textContent = result.empty ? "" : starsHtml(stars);
+    resultScore.textContent = result.empty ? "" : settings.kidsMode ? "" : `ความแม่นยำ ${result.score}%`;
     const answerVerb = groupConfigFor(currentLang(), currentItem.group).answerVerb || currentLang().answerVerb;
     resultAnswer.innerHTML = `<span class="big">${currentItem.char}</span> ${answerVerb} "${currentItem.reading}"`;
 
@@ -455,6 +541,7 @@
   }
 
   function nextRound() {
+    stopStrokeAnimation();
     currentItem = pickNextItem();
     lastChar = currentItem.char;
     hasChecked = false;
@@ -462,29 +549,109 @@
     promptRomaji.textContent = currentItem.reading;
     promptRomaji.classList.toggle("long-text", currentItem.reading.length > 6);
     clearDrawing();
-    clearOverlay();
+    showTraceGhost();
     resultPanel.hidden = true;
     nextBtn.disabled = true;
     updateActionButtons();
+    watchBtn.hidden = !STROKE_ORDER[currentItem.char];
+    if (settings.kidsMode) speakCurrent();
   }
 
   checkBtn.addEventListener("click", checkAnswer);
   nextBtn.addEventListener("click", nextRound);
 
   // ---------- Speak (TTS) ----------
-  speakBtn.addEventListener("click", () => {
+  function speakCurrent() {
     if (!currentItem || !("speechSynthesis" in window)) return;
     const utter = new SpeechSynthesisUtterance(currentItem.char);
     utter.lang = currentLang().ttsLang;
     utter.rate = 0.8;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
-  });
+  }
+  speakBtn.addEventListener("click", speakCurrent);
+
+  // ---------- Stroke-order animation ("ดูวิธีเขียน") ----------
+  let strokeAnimToken = 0;
+  function stopStrokeAnimation() {
+    strokeAnimToken++; // invalidates any in-flight animation loop
+    strokeAnimCtx.clearRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
+    watchBtn.disabled = false;
+  }
+  function wait(ms, token) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => (token === strokeAnimToken ? resolve() : reject(new Error("cancelled"))), ms);
+    });
+  }
+  async function animateStroke(points, index, token) {
+    const scaled = points.map(([x, y]) => ({ x: (x / 100) * LOGICAL_SIZE, y: (y / 100) * LOGICAL_SIZE }));
+    const durationMs = 700;
+    const steps = 40;
+    strokeAnimCtx.lineCap = "round";
+    strokeAnimCtx.lineJoin = "round";
+    strokeAnimCtx.strokeStyle = "#2563eb";
+    strokeAnimCtx.lineWidth = 6;
+    // numbered start badge
+    strokeAnimCtx.beginPath();
+    strokeAnimCtx.fillStyle = "#2563eb";
+    strokeAnimCtx.arc(scaled[0].x, scaled[0].y, 11, 0, Math.PI * 2);
+    strokeAnimCtx.fill();
+    strokeAnimCtx.fillStyle = "#fff";
+    strokeAnimCtx.font = "bold 13px sans-serif";
+    strokeAnimCtx.textAlign = "center";
+    strokeAnimCtx.textBaseline = "middle";
+    strokeAnimCtx.fillText(String(index + 1), scaled[0].x, scaled[0].y + 1);
+
+    for (let s = 1; s <= steps; s++) {
+      if (token !== strokeAnimToken) return;
+      const t = s / steps;
+      const segCount = scaled.length - 1;
+      const segPos = t * segCount;
+      const segIndex = Math.min(Math.floor(segPos), segCount - 1);
+      const segT = segPos - segIndex;
+      const a = scaled[segIndex];
+      const b = scaled[segIndex + 1];
+      const cx = a.x + (b.x - a.x) * segT;
+      const cy = a.y + (b.y - a.y) * segT;
+
+      strokeAnimCtx.beginPath();
+      strokeAnimCtx.moveTo(a.x, a.y);
+      for (let i = 0; i <= segIndex; i++) {
+        strokeAnimCtx.lineTo(scaled[i].x, scaled[i].y);
+      }
+      strokeAnimCtx.lineTo(cx, cy);
+      strokeAnimCtx.stroke();
+
+      await wait(durationMs / steps, token);
+    }
+  }
+  async function playStrokeAnimation() {
+    if (!currentItem) return;
+    const charStrokes = STROKE_ORDER[currentItem.char];
+    if (!charStrokes) return;
+    stopStrokeAnimation();
+    const token = strokeAnimToken;
+    watchBtn.disabled = true;
+    try {
+      for (let i = 0; i < charStrokes.length; i++) {
+        await animateStroke(charStrokes[i], i, token);
+        await wait(300, token);
+      }
+      await wait(500, token);
+    } catch (e) {
+      // cancelled mid-flight (user clicked Next / Watch again) — nothing to clean up
+    }
+    if (token === strokeAnimToken) {
+      strokeAnimCtx.clearRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
+      watchBtn.disabled = false;
+    }
+  }
+  watchBtn.addEventListener("click", playStrokeAnimation);
 
   // ---------- Stats bar ----------
   function updateStatsBar() {
     statAttempts.textContent = stats.attempts;
-    statAccuracy.textContent = stats.attempts ? Math.round((stats.correct / stats.attempts) * 100) + "%" : "0%";
+    statStars.textContent = `${stats.totalStars} ⭐`;
     statStreak.textContent = stats.streak;
     renderProgressSummary();
   }
@@ -501,7 +668,8 @@
     const lang = currentLang();
     const groupState = settings.groupsByLang[settings.lang];
     groupCheckboxContainer.innerHTML = "";
-    for (const g of lang.groups) {
+    const visibleGroups = settings.kidsMode ? lang.groups.filter((g) => !g.advanced) : lang.groups;
+    for (const g of visibleGroups) {
       const label = document.createElement("label");
       label.className = "checkbox-row";
       const input = document.createElement("input");
@@ -529,11 +697,18 @@
     langSubtitle.textContent = lang.subtitle;
   }
 
+  function applyKidsModeChrome() {
+    document.body.classList.toggle("kids-mode", settings.kidsMode);
+  }
+
   function syncSettingsUI() {
+    kidsModeInput.checked = settings.kidsMode;
     langSelect.value = settings.lang;
     renderGroupCheckboxes();
     penSizeInput.value = settings.penSize;
     showGuideInput.checked = settings.showGuide;
+    traceModeInput.checked = settings.traceMode;
+    soundOnInput.checked = settings.soundOn;
   }
 
   settingsBtn.addEventListener("click", () => {
@@ -547,6 +722,12 @@
     if (e.target === settingsOverlay) settingsOverlay.hidden = true;
   });
 
+  kidsModeInput.addEventListener("change", () => {
+    settings.kidsMode = kidsModeInput.checked;
+    persistSettings();
+    applyKidsModeChrome();
+    renderGroupCheckboxes();
+  });
   langSelect.addEventListener("change", () => {
     settings.lang = langSelect.value;
     persistSettings();
@@ -563,9 +744,18 @@
     persistSettings();
     drawGuide();
   });
+  traceModeInput.addEventListener("change", () => {
+    settings.traceMode = traceModeInput.checked;
+    persistSettings();
+    if (!hasChecked) showTraceGhost();
+  });
+  soundOnInput.addEventListener("change", () => {
+    settings.soundOn = soundOnInput.checked;
+    persistSettings();
+  });
   resetStatsBtn.addEventListener("click", () => {
     if (!confirm("ล้างสถิติทั้งหมดใช่หรือไม่?")) return;
-    stats = { attempts: 0, correct: 0, streak: 0, perChar: {} };
+    stats = { attempts: 0, correct: 0, streak: 0, totalStars: 0, perChar: {} };
     persistStats();
     updateStatsBar();
   });
@@ -573,6 +763,7 @@
   // ---------- Init ----------
   drawGuide();
   applyLanguageChrome();
+  applyKidsModeChrome();
   updateStatsBar();
   nextRound();
 })();

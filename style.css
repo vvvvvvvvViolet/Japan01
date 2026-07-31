@@ -156,12 +156,31 @@ html, body {
   height: 100%;
 }
 
-#guideCanvas, #overlayCanvas {
+#guideCanvas, #overlayCanvas, #strokeAnimCanvas {
   pointer-events: none;
 }
 
 #drawCanvas {
   cursor: crosshair;
+}
+
+.watch-btn {
+  align-self: center;
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
+.watch-btn[hidden] {
+  display: none;
+}
+
+body.kids-mode .watch-btn {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
 }
 
 .toolbar {
@@ -220,6 +239,12 @@ html, body {
   font-size: 1.2rem;
   font-weight: 800;
   margin-bottom: 4px;
+}
+
+.result-stars {
+  font-size: 2rem;
+  letter-spacing: 0.15em;
+  margin-bottom: 2px;
 }
 
 .result-score {
@@ -322,4 +347,47 @@ html, body {
   color: var(--muted);
   font-size: 0.85rem;
   white-space: pre-line;
+}
+
+/* Kids Mode: bigger touch targets and text for young children */
+body.kids-mode .topbar h1 {
+  font-size: 1.6rem;
+}
+
+body.kids-mode .icon-btn {
+  width: 50px;
+  height: 50px;
+  font-size: 1.3rem;
+}
+
+body.kids-mode .icon-btn.small {
+  width: 42px;
+  height: 42px;
+  font-size: 1.1rem;
+}
+
+body.kids-mode .stat-value {
+  font-size: 1.4rem;
+}
+
+body.kids-mode .stat-label {
+  font-size: 0.8rem;
+}
+
+body.kids-mode .prompt-romaji {
+  font-size: 2.6rem;
+}
+
+body.kids-mode .btn {
+  padding: 14px 20px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+body.kids-mode .result-headline {
+  font-size: 1.5rem;
+}
+
+body.kids-mode .result-answer .big {
+  font-size: 2.2rem;
 }

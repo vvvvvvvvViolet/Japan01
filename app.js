@@ -26,6 +26,21 @@
       promptLabel: "เขียนตัวอักษรที่อ่านว่า",
       answerVerb: "อ่านว่า",
     },
+    katakana: {
+      label: "カタカナ",
+      subtitle: "ฝึกเขียนคาตาคานะ",
+      data: KATAKANA_DATA,
+      groups: [
+        { key: "basic", label: "พื้นฐาน (ア〜ン) 46 ตัว" },
+        { key: "dakuten", label: "เสียงกล้ำ (ガ ザ ダ バ) 20 ตัว" },
+        { key: "handakuten", label: "เสียงครึ่งกล้ำ (パ) 5 ตัว" },
+        { key: "youon", label: "เสียงควบ (キャ シャ) 33 ตัว" },
+      ],
+      font: `"Hiragino Sans","Hiragino Kaku Gothic Pro","Yu Gothic","Noto Sans JP","Noto Sans CJK JP",sans-serif`,
+      ttsLang: "ja-JP",
+      promptLabel: "เขียนตัวอักษรที่อ่านว่า",
+      answerVerb: "อ่านว่า",
+    },
     chinese: {
       label: "汉字",
       subtitle: "ฝึกเขียนภาษาจีนพื้นฐาน",
@@ -66,6 +81,7 @@
   function defaultGroupsByLang() {
     return {
       hiragana: { basic: true, dakuten: false, handakuten: false, youon: false },
+      katakana: { basic: true, dakuten: false, handakuten: false, youon: false },
       chinese: { numbers: true, basic: true, words: false, hsk5: false },
       english: { uppercase: true, lowercase: true, toeic600: false },
     };
@@ -85,6 +101,7 @@
   const promptLabel = document.getElementById("promptLabel");
   const promptRomaji = document.getElementById("promptRomaji");
   const speakBtn = document.getElementById("speakBtn");
+  const refreshBtn = document.getElementById("refreshBtn");
   const guideCanvas = document.getElementById("guideCanvas");
   const drawCanvas = document.getElementById("drawCanvas");
   const overlayCanvas = document.getElementById("overlayCanvas");
@@ -559,6 +576,7 @@
 
   checkBtn.addEventListener("click", checkAnswer);
   nextBtn.addEventListener("click", nextRound);
+  refreshBtn.addEventListener("click", nextRound); // ขอคำใหม่ได้ทุกเมื่อ ไม่นับเป็นความพยายาม (ไม่แตะ stats)
 
   // ---------- Speak (TTS) ----------
   function speakCurrent() {

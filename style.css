@@ -129,6 +129,13 @@ html, body {
   font-weight: 800;
   letter-spacing: 0.02em;
   color: var(--accent);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.prompt-romaji.long-text {
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
 .canvas-wrap {

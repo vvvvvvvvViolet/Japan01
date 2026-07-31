@@ -34,6 +34,7 @@
         { key: "numbers", label: "ตัวเลข 1-10" },
         { key: "basic", label: "อักษรพื้นฐาน" },
         { key: "words", label: "คำศัพท์พื้นฐาน 2 ตัวอักษร" },
+        { key: "hsk5", label: "คำศัพท์ระดับ HSK5 (~90 คำ)" },
       ],
       font: `"PingFang SC","Noto Sans SC","Microsoft YaHei","Heiti SC","Noto Sans CJK JP",sans-serif`,
       ttsLang: "zh-CN",
@@ -45,8 +46,14 @@
       subtitle: "ฝึกเขียนภาษาอังกฤษพื้นฐาน",
       data: ENGLISH_DATA,
       groups: [
-        { key: "uppercase", label: "ตัวพิมพ์เล็ก → เขียนตัวพิมพ์ใหญ่" },
-        { key: "lowercase", label: "ตัวพิมพ์ใหญ่ → เขียนตัวพิมพ์เล็ก" },
+        { key: "uppercase", label: "ตัวพิมพ์เล็ก → เขียนตัวพิมพ์ใหญ่", promptLabel: "เขียนตัวอักษรคู่กับ", answerVerb: "คู่กับ" },
+        { key: "lowercase", label: "ตัวพิมพ์ใหญ่ → เขียนตัวพิมพ์เล็ก", promptLabel: "เขียนตัวอักษรคู่กับ", answerVerb: "คู่กับ" },
+        {
+          key: "toeic600",
+          label: "คำศัพท์ TOEIC ~600 (~80 คำ)",
+          promptLabel: "เขียนคำศัพท์ภาษาอังกฤษที่แปลว่า",
+          answerVerb: "แปลว่า",
+        },
       ],
       font: `"Segoe UI","Arial","Helvetica",sans-serif`,
       ttsLang: "en-US",
@@ -58,9 +65,13 @@
   function defaultGroupsByLang() {
     return {
       hiragana: { basic: true, dakuten: false, handakuten: false, youon: false },
-      chinese: { numbers: true, basic: true, words: false },
-      english: { uppercase: true, lowercase: true },
+      chinese: { numbers: true, basic: true, words: false, hsk5: false },
+      english: { uppercase: true, lowercase: true, toeic600: false },
     };
+  }
+
+  function groupConfigFor(lang, groupKey) {
+    return lang.groups.find((g) => g.key === groupKey) || {};
   }
 
   function currentLang() {
@@ -295,6 +306,14 @@
   }
 
   // ---------- Reference glyph rendering & scoring ----------
+  // ตัวอักษรเดี่ยว (kana/hanzi/letter) ใช้ตัวใหญ่เต็มกรอบ ส่วนคำยาว (2 ตัวอักษรขึ้นไป
+  // หรือคำศัพท์ภาษาอังกฤษ) ลดขนาดลงตามความยาว แล้วปล่อยให้ maxWidth ของ fillText
+  // บีบแนวนอนเป็นตัวกันสุดท้ายถ้ายังยาวเกินกรอบ
+  function fontScaleFor(textLength) {
+    if (textLength <= 1) return 0.6;
+    return Math.max(0.16, Math.min(0.42, 1.1 / textLength));
+  }
+
   function renderReferenceMask(text, w, h, font, blurPx, alphaThreshold) {
     const c = document.createElement("canvas");
     c.width = w;
@@ -304,7 +323,7 @@
     cx.fillStyle = "#000";
     cx.textAlign = "center";
     cx.textBaseline = "middle";
-    const fontScale = text.length > 1 ? 0.42 : 0.6;
+    const fontScale = fontScaleFor(text.length);
     cx.font = `${Math.floor(h * fontScale)}px ${font}`;
     if (blurPx) cx.filter = `blur(${blurPx}px)`;
     cx.fillText(text, w / 2, h / 2 + h * 0.02, w * 0.86);
@@ -356,7 +375,9 @@
   function scoreDrawing(text, font) {
     const w = drawCanvas.width;
     const h = drawCanvas.height;
-    const toleranceBlur = Math.max(4, Math.round(w * 0.03));
+    // คำยาวมักมีระยะห่างระหว่างตัวอักษรที่เขียนด้วยมือคลาดเคลื่อนจากฟอนต์อ้างอิงมากกว่า
+    // จึงเพิ่มระยะยอมรับ (blur) ขึ้นตามความยาวคำ สูงสุด 2 เท่า
+    const toleranceBlur = Math.max(4, Math.round(w * 0.03 * Math.min(2, Math.sqrt(text.length))));
 
     const exactRef = renderReferenceMask(text, w, h, font, 0, 90);
     const toleranceRef = renderReferenceMask(text, w, h, font, toleranceBlur, TOLERANCE_ALPHA_THRESHOLD);
@@ -424,7 +445,8 @@
       ? "ถูกต้อง! 🎉"
       : "ยังไม่ตรงนัก ลองดูตัวอย่างด้านล่าง";
     resultScore.textContent = result.empty ? "" : `ความแม่นยำ ${result.score}%`;
-    resultAnswer.innerHTML = `<span class="big">${currentItem.char}</span> ${currentLang().answerVerb} "${currentItem.reading}"`;
+    const answerVerb = groupConfigFor(currentLang(), currentItem.group).answerVerb || currentLang().answerVerb;
+    resultAnswer.innerHTML = `<span class="big">${currentItem.char}</span> ${answerVerb} "${currentItem.reading}"`;
 
     checkBtn.disabled = true;
     undoBtn.disabled = true;
@@ -436,8 +458,9 @@
     currentItem = pickNextItem();
     lastChar = currentItem.char;
     hasChecked = false;
-    promptLabel.textContent = currentLang().promptLabel;
+    promptLabel.textContent = groupConfigFor(currentLang(), currentItem.group).promptLabel || currentLang().promptLabel;
     promptRomaji.textContent = currentItem.reading;
+    promptRomaji.classList.toggle("long-text", currentItem.reading.length > 6);
     clearDrawing();
     clearOverlay();
     resultPanel.hidden = true;

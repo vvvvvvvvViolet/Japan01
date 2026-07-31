@@ -3,13 +3,74 @@
 
   // ---------- Constants ----------
   const LOGICAL_SIZE = 320; // logical px, matches canvas width/height attrs
-  const SETTINGS_KEY = "hiragana_settings_v1";
-  const STATS_KEY = "hiragana_stats_v1";
+  const SETTINGS_KEY = "hiragana_settings_v2";
+  const STATS_KEY = "hiragana_stats_v2";
   const PASS_SCORE = 58;
   const INK_ALPHA_THRESHOLD = 24;
   const TOLERANCE_ALPHA_THRESHOLD = 10;
 
+  // ---------- Language registry ----------
+  const LANGUAGES = {
+    hiragana: {
+      label: "ひらがな",
+      subtitle: "ฝึกเขียนฮิรางานะ",
+      data: KANA_DATA,
+      groups: [
+        { key: "basic", label: "พื้นฐาน (あ〜ん) 46 ตัว" },
+        { key: "dakuten", label: "เสียงกล้ำ (が ざ だ ば) 20 ตัว" },
+        { key: "handakuten", label: "เสียงครึ่งกล้ำ (ぱ) 5 ตัว" },
+        { key: "youon", label: "เสียงควบ (きゃ しゃ) 33 ตัว" },
+      ],
+      font: `"Hiragino Sans","Hiragino Kaku Gothic Pro","Yu Gothic","Noto Sans JP","Noto Sans CJK JP",sans-serif`,
+      ttsLang: "ja-JP",
+      promptLabel: "เขียนตัวอักษรที่อ่านว่า",
+      answerVerb: "อ่านว่า",
+    },
+    chinese: {
+      label: "汉字",
+      subtitle: "ฝึกเขียนภาษาจีนพื้นฐาน",
+      data: CHINESE_DATA,
+      groups: [
+        { key: "numbers", label: "ตัวเลข 1-10" },
+        { key: "basic", label: "อักษรพื้นฐาน" },
+        { key: "words", label: "คำศัพท์พื้นฐาน 2 ตัวอักษร" },
+      ],
+      font: `"PingFang SC","Noto Sans SC","Microsoft YaHei","Heiti SC","Noto Sans CJK JP",sans-serif`,
+      ttsLang: "zh-CN",
+      promptLabel: "เขียนตัวอักษรที่อ่านว่า (พินอิน)",
+      answerVerb: "อ่านว่า",
+    },
+    english: {
+      label: "Aa",
+      subtitle: "ฝึกเขียนภาษาอังกฤษพื้นฐาน",
+      data: ENGLISH_DATA,
+      groups: [
+        { key: "uppercase", label: "ตัวพิมพ์เล็ก → เขียนตัวพิมพ์ใหญ่" },
+        { key: "lowercase", label: "ตัวพิมพ์ใหญ่ → เขียนตัวพิมพ์เล็ก" },
+      ],
+      font: `"Segoe UI","Arial","Helvetica",sans-serif`,
+      ttsLang: "en-US",
+      promptLabel: "เขียนตัวอักษรคู่กับ",
+      answerVerb: "คู่กับ",
+    },
+  };
+
+  function defaultGroupsByLang() {
+    return {
+      hiragana: { basic: true, dakuten: false, handakuten: false, youon: false },
+      chinese: { numbers: true, basic: true, words: false },
+      english: { uppercase: true, lowercase: true },
+    };
+  }
+
+  function currentLang() {
+    return LANGUAGES[settings.lang] || LANGUAGES.hiragana;
+  }
+
   // ---------- DOM ----------
+  const langGlyph = document.getElementById("langGlyph");
+  const langSubtitle = document.getElementById("langSubtitle");
+  const promptLabel = document.getElementById("promptLabel");
   const promptRomaji = document.getElementById("promptRomaji");
   const speakBtn = document.getElementById("speakBtn");
   const guideCanvas = document.getElementById("guideCanvas");
@@ -29,7 +90,8 @@
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsOverlay = document.getElementById("settingsOverlay");
   const closeSettingsBtn = document.getElementById("closeSettingsBtn");
-  const groupCheckboxes = Array.from(document.querySelectorAll("input[data-group]"));
+  const langSelect = document.getElementById("langSelect");
+  const groupCheckboxContainer = document.getElementById("groupCheckboxContainer");
   const penSizeInput = document.getElementById("penSize");
   const showGuideInput = document.getElementById("showGuide");
   const resetStatsBtn = document.getElementById("resetStatsBtn");
@@ -53,17 +115,18 @@
   }
 
   let settings = Object.assign(
-    { groups: { basic: true, dakuten: false, handakuten: false, youon: false }, penSize: 10, showGuide: true },
+    { lang: "hiragana", groupsByLang: defaultGroupsByLang(), penSize: 10, showGuide: true },
     loadJSON(SETTINGS_KEY, {})
   );
-  let stats = loadJSON(STATS_KEY, { attempts: 0, correct: 0, streak: 0, perKana: {} });
+  if (!settings.groupsByLang) settings.groupsByLang = defaultGroupsByLang();
+  let stats = loadJSON(STATS_KEY, { attempts: 0, correct: 0, streak: 0, perChar: {} });
 
   function persistSettings() { saveJSON(SETTINGS_KEY, settings); }
   function persistStats() { saveJSON(STATS_KEY, stats); }
 
   // ---------- Session state ----------
-  let currentKana = null;
-  let lastKanaChar = null;
+  let currentItem = null;
+  let lastChar = null;
   let hasChecked = false;
 
   // ---------- Canvas setup (HiDPI) ----------
@@ -195,15 +258,19 @@
   clearBtn.addEventListener("click", clearDrawing);
   undoBtn.addEventListener("click", undoStroke);
 
-  // ---------- Kana pool & weighted picking ----------
+  // ---------- Item pool & weighted picking ----------
   function activePool() {
-    const pool = KANA_DATA.filter((k) => settings.groups[k.group]);
-    return pool.length ? pool : KANA_DATA.filter((k) => k.group === "basic");
+    const lang = currentLang();
+    const groupState = settings.groupsByLang[settings.lang] || {};
+    const pool = lang.data.filter((item) => groupState[item.group]);
+    if (pool.length) return pool;
+    const fallbackGroup = lang.groups[0].key;
+    return lang.data.filter((item) => item.group === fallbackGroup);
   }
 
-  function weightFor(k) {
-    const s = stats.perKana[k.kana];
-    if (!s || s.attempts === 0) return 3; // unseen chars shown a bit more often
+  function weightFor(item) {
+    const s = stats.perChar[item.char];
+    if (!s || s.attempts === 0) return 3; // unseen items shown a bit more often
     const wrong = s.attempts - s.correct;
     const accuracy = s.correct / s.attempts;
     let w = 1 + wrong * 2.2;
@@ -211,11 +278,11 @@
     return Math.max(w, 0.6);
   }
 
-  function pickNextKana() {
+  function pickNextItem() {
     const pool = activePool();
     let candidates = pool;
     if (pool.length > 1) {
-      candidates = pool.filter((k) => k.kana !== lastKanaChar);
+      candidates = pool.filter((item) => item.char !== lastChar);
     }
     const weights = candidates.map(weightFor);
     const total = weights.reduce((a, b) => a + b, 0);
@@ -228,7 +295,7 @@
   }
 
   // ---------- Reference glyph rendering & scoring ----------
-  function renderReferenceMask(text, w, h, blurPx, alphaThreshold) {
+  function renderReferenceMask(text, w, h, font, blurPx, alphaThreshold) {
     const c = document.createElement("canvas");
     c.width = w;
     c.height = h;
@@ -237,9 +304,10 @@
     cx.fillStyle = "#000";
     cx.textAlign = "center";
     cx.textBaseline = "middle";
-    cx.font = `${Math.floor(h * 0.6)}px "Hiragino Sans","Hiragino Kaku Gothic Pro","Yu Gothic","Noto Sans JP","Noto Sans CJK JP",sans-serif`;
+    const fontScale = text.length > 1 ? 0.42 : 0.6;
+    cx.font = `${Math.floor(h * fontScale)}px ${font}`;
     if (blurPx) cx.filter = `blur(${blurPx}px)`;
-    cx.fillText(text, w / 2, h / 2 + h * 0.02);
+    cx.fillText(text, w / 2, h / 2 + h * 0.02, w * 0.86);
     const data = cx.getImageData(0, 0, w, h).data;
     const mask = new Uint8Array(w * h);
     let count = 0;
@@ -285,13 +353,13 @@
     return n;
   }
 
-  function scoreDrawing(kanaText) {
+  function scoreDrawing(text, font) {
     const w = drawCanvas.width;
     const h = drawCanvas.height;
     const toleranceBlur = Math.max(4, Math.round(w * 0.03));
 
-    const exactRef = renderReferenceMask(kanaText, w, h, 0, 90);
-    const toleranceRef = renderReferenceMask(kanaText, w, h, toleranceBlur, TOLERANCE_ALPHA_THRESHOLD);
+    const exactRef = renderReferenceMask(text, w, h, font, 0, 90);
+    const toleranceRef = renderReferenceMask(text, w, h, font, toleranceBlur, TOLERANCE_ALPHA_THRESHOLD);
     const user = maskFromCanvas(drawCanvas, w, h, 0, INK_ALPHA_THRESHOLD);
     const userDilated = maskFromCanvas(drawCanvas, w, h, toleranceBlur, TOLERANCE_ALPHA_THRESHOLD);
 
@@ -309,7 +377,7 @@
     return { score: Math.min(score, 100), empty: false, refCanvas: exactRef.canvas, coverage, precision };
   }
 
-  function showOverlay(refCanvas, correct) {
+  function showOverlay(refCanvas) {
     overlayCtx.save();
     overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
@@ -326,18 +394,18 @@
 
   // ---------- Check / Next flow ----------
   function checkAnswer() {
-    if (!currentKana || strokes.length === 0) return;
-    const result = scoreDrawing(currentKana.kana);
+    if (!currentItem || strokes.length === 0) return;
+    const result = scoreDrawing(currentItem.char, currentLang().font);
     hasChecked = true;
 
-    const kanaKey = currentKana.kana;
-    if (!stats.perKana[kanaKey]) stats.perKana[kanaKey] = { attempts: 0, correct: 0 };
-    stats.perKana[kanaKey].attempts++;
+    const charKey = currentItem.char;
+    if (!stats.perChar[charKey]) stats.perChar[charKey] = { attempts: 0, correct: 0 };
+    stats.perChar[charKey].attempts++;
     stats.attempts++;
 
     const passed = !result.empty && result.score >= PASS_SCORE;
     if (passed) {
-      stats.perKana[kanaKey].correct++;
+      stats.perChar[charKey].correct++;
       stats.correct++;
       stats.streak++;
     } else {
@@ -346,7 +414,7 @@
     persistStats();
     updateStatsBar();
 
-    showOverlay(result.refCanvas, passed);
+    showOverlay(result.refCanvas);
 
     resultPanel.hidden = false;
     resultPanel.className = "result-panel " + (passed ? "correct" : "incorrect");
@@ -356,7 +424,7 @@
       ? "ถูกต้อง! 🎉"
       : "ยังไม่ตรงนัก ลองดูตัวอย่างด้านล่าง";
     resultScore.textContent = result.empty ? "" : `ความแม่นยำ ${result.score}%`;
-    resultAnswer.innerHTML = `<span class="big">${currentKana.kana}</span> อ่านว่า "${currentKana.romaji}"`;
+    resultAnswer.innerHTML = `<span class="big">${currentItem.char}</span> ${currentLang().answerVerb} "${currentItem.reading}"`;
 
     checkBtn.disabled = true;
     undoBtn.disabled = true;
@@ -365,10 +433,11 @@
   }
 
   function nextRound() {
-    currentKana = pickNextKana();
-    lastKanaChar = currentKana.kana;
+    currentItem = pickNextItem();
+    lastChar = currentItem.char;
     hasChecked = false;
-    promptRomaji.textContent = currentKana.romaji;
+    promptLabel.textContent = currentLang().promptLabel;
+    promptRomaji.textContent = currentItem.reading;
     clearDrawing();
     clearOverlay();
     resultPanel.hidden = true;
@@ -381,9 +450,9 @@
 
   // ---------- Speak (TTS) ----------
   speakBtn.addEventListener("click", () => {
-    if (!currentKana || !("speechSynthesis" in window)) return;
-    const utter = new SpeechSynthesisUtterance(currentKana.kana);
-    utter.lang = "ja-JP";
+    if (!currentItem || !("speechSynthesis" in window)) return;
+    const utter = new SpeechSynthesisUtterance(currentItem.char);
+    utter.lang = currentLang().ttsLang;
     utter.rate = 0.8;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
@@ -398,17 +467,48 @@
   }
 
   function renderProgressSummary() {
-    const seen = Object.keys(stats.perKana).length;
+    const seen = Object.keys(stats.perChar).length;
     progressSummary.textContent =
-      `เขียนไปแล้ว ${stats.attempts} ครั้ง จาก ${seen} ตัวอักษร\n` +
+      `เขียนไปแล้ว ${stats.attempts} ครั้ง จาก ${seen} ตัวอักษร (ทุกภาษารวมกัน)\n` +
       `ตอบถูก ${stats.correct} ครั้ง (${stats.attempts ? Math.round((stats.correct / stats.attempts) * 100) : 0}%)`;
   }
 
   // ---------- Settings panel ----------
+  function renderGroupCheckboxes() {
+    const lang = currentLang();
+    const groupState = settings.groupsByLang[settings.lang];
+    groupCheckboxContainer.innerHTML = "";
+    for (const g of lang.groups) {
+      const label = document.createElement("label");
+      label.className = "checkbox-row";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.dataset.group = g.key;
+      input.checked = !!groupState[g.key];
+      input.addEventListener("change", () => {
+        groupState[g.key] = input.checked;
+        const anyChecked = Object.values(groupState).some(Boolean);
+        if (!anyChecked) {
+          input.checked = true;
+          groupState[g.key] = true;
+        }
+        persistSettings();
+      });
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(" " + g.label));
+      groupCheckboxContainer.appendChild(label);
+    }
+  }
+
+  function applyLanguageChrome() {
+    const lang = currentLang();
+    langGlyph.textContent = lang.label;
+    langSubtitle.textContent = lang.subtitle;
+  }
+
   function syncSettingsUI() {
-    groupCheckboxes.forEach((cb) => {
-      cb.checked = !!settings.groups[cb.dataset.group];
-    });
+    langSelect.value = settings.lang;
+    renderGroupCheckboxes();
     penSizeInput.value = settings.penSize;
     showGuideInput.checked = settings.showGuide;
   }
@@ -424,16 +524,12 @@
     if (e.target === settingsOverlay) settingsOverlay.hidden = true;
   });
 
-  groupCheckboxes.forEach((cb) => {
-    cb.addEventListener("change", () => {
-      settings.groups[cb.dataset.group] = cb.checked;
-      const anyChecked = Object.values(settings.groups).some(Boolean);
-      if (!anyChecked) {
-        cb.checked = true;
-        settings.groups[cb.dataset.group] = true;
-      }
-      persistSettings();
-    });
+  langSelect.addEventListener("change", () => {
+    settings.lang = langSelect.value;
+    persistSettings();
+    applyLanguageChrome();
+    renderGroupCheckboxes();
+    nextRound();
   });
   penSizeInput.addEventListener("input", () => {
     settings.penSize = Number(penSizeInput.value);
@@ -446,13 +542,14 @@
   });
   resetStatsBtn.addEventListener("click", () => {
     if (!confirm("ล้างสถิติทั้งหมดใช่หรือไม่?")) return;
-    stats = { attempts: 0, correct: 0, streak: 0, perKana: {} };
+    stats = { attempts: 0, correct: 0, streak: 0, perChar: {} };
     persistStats();
     updateStatsBar();
   });
 
   // ---------- Init ----------
   drawGuide();
+  applyLanguageChrome();
   updateStatsBar();
   nextRound();
 })();

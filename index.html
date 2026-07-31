@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>ฝึกเขียนฮิรางานะ | Hiragana Writing Practice</title>
+<title>ฝึกเขียนตัวอักษร | Hiragana · Chinese · English Writing Practice</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <h1>ひらがな <span>ฝึกเขียนฮิรางานะ</span></h1>
+      <h1><span id="langGlyph">ひらがな</span> <span id="langSubtitle">ฝึกเขียนฮิรางานะ</span></h1>
       <button id="settingsBtn" class="icon-btn" title="ตั้งค่า" aria-label="ตั้งค่า">⚙️</button>
     </header>
 
@@ -21,7 +21,7 @@
 
     <main class="practice-area">
       <div class="prompt-card">
-        <div class="prompt-label">เขียนตัวอักษรที่อ่านว่า</div>
+        <div class="prompt-label" id="promptLabel">เขียนตัวอักษรที่อ่านว่า</div>
         <div class="prompt-romaji" id="promptRomaji">a</div>
         <button id="speakBtn" class="icon-btn small" title="ฟังเสียง" aria-label="ฟังเสียง">🔊</button>
       </div>
@@ -55,11 +55,19 @@
       </div>
 
       <div class="settings-group">
+        <h3>ภาษา</h3>
+        <label class="checkbox-row" style="justify-content: space-between">
+          <select id="langSelect" class="lang-select">
+            <option value="hiragana">ฮิรางานะ (日本語)</option>
+            <option value="chinese">จีนพื้นฐาน (中文)</option>
+            <option value="english">อังกฤษพื้นฐาน (English)</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="settings-group">
         <h3>กลุ่มตัวอักษร</h3>
-        <label class="checkbox-row"><input type="checkbox" data-group="basic" checked /> พื้นฐาน (あ〜ん) 46 ตัว</label>
-        <label class="checkbox-row"><input type="checkbox" data-group="dakuten" /> เสียงกล้ำ (が ざ だ ば) 20 ตัว</label>
-        <label class="checkbox-row"><input type="checkbox" data-group="handakuten" /> เสียงครึ่งกล้ำ (ぱ) 5 ตัว</label>
-        <label class="checkbox-row"><input type="checkbox" data-group="youon" /> เสียงควบ (きゃ しゃ) 33 ตัว</label>
+        <div id="groupCheckboxContainer"></div>
       </div>
 
       <div class="settings-group">
@@ -79,6 +87,8 @@
   </div>
 
   <script src="kana-data.js"></script>
+  <script src="chinese-data.js"></script>
+  <script src="english-data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
